@@ -7,8 +7,10 @@ First things first: this is a python project, but it involves a C extension mode
 There are two include paths that the compiler will need to take from: the general Python installation, and from Numpy.  In order to find the appropriate paths for these two libraries, open a python3 instance and type the following:
 
 General Python import path:
-```>>> from distutils.sysconfig import get_python_inc
->>> print(get_python_inc())```
+```
+>>> from distutils.sysconfig import get_python_inc
+>>> print(get_python_inc())
+```
 
 Numpy import path:
 ```>>> from numpy import get_include as npy_get_include
