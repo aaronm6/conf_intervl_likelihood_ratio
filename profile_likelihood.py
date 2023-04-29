@@ -3,7 +3,7 @@ import sys as _sys
 fname_base = 'profile_likelihood'
 so_name = f'{fname_base}.so'
 
-if so_name not in _os.listdir():
+if not _os.path.isfile(so_name):
     print(f"\n{so_name} does not exist, and must be compiled.  Make sure the following")
     print("paths are added to the C_INCLUDE_PATH environment variable: \n")
     from distutils.sysconfig import get_python_inc
