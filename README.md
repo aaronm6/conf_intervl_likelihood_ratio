@@ -13,33 +13,39 @@ General Python import path:
 ```
 
 Numpy import path:
-```>>> from numpy import get_include as npy_get_include
+```
+>>> from numpy import get_include as npy_get_include
 >>> print(npy_get_include())
 ```
 
 If either of these [full] paths are not already in the `C_INCLUDE_PATH` variable, they needed to be added in the same way that one adds paths to the `PATH` variable.  For example, imagine the Python path (returned by the first python command above) is:
 
-```/home/my_username/.local/lib/python3.10/site-packages/numpy/core/include/:/usr/include/python3.10/
+```
+/home/my_username/.local/lib/python3.10/site-packages/numpy/core/include/:/usr/include/python3.10/
 ```
 
 then in your `.bashrc` file, the following line needs to be added:
 
-```export C_INCLUDE_PATH=$C_INCLUDE_PATH:/home/my_username/.local/lib/python3.10/site-packages/numpy/core/include/:/usr/include/python3.10/
+```
+export C_INCLUDE_PATH=$C_INCLUDE_PATH:/home/my_username/.local/lib/python3.10/site-packages/numpy/core/include/:/usr/include/python3.10/
 ```
 
 and the same for the Numpy path.  Once this is done, the following lines will perform the compilation:
 
 Mac:
-```clang -shared -undefined dynamic_lookup -o profile_likelihood.so profile_likelihood.c
+```
+clang -shared -undefined dynamic_lookup -o profile_likelihood.so profile_likelihood.c
 ```
 
 Linux:
-```gcc -shared -o profile_likelihood.so -fPIC profile_likelihood.c
+```
+gcc -shared -o profile_likelihood.so -fPIC profile_likelihood.c
 ```
 
 If the compilation has produced a `profile_likelihood.so` file, one can check that it's working correctly by opening a Python terminal in the same directory and typing:
 
-```>>> import profile_likelihood
+```
+>>> import profile_likelihood
 ```
 
 If the above command completed without complaint, then everything should be working fine.
