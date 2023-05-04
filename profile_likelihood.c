@@ -205,7 +205,9 @@ static PyObject *meth_fit_mu(PyObject *self, PyObject *args) {
 	
 	npy_intp *Odims = &nsim;
 	PyObject *nd_mu_hat = PyArray_EMPTY(1, Odims, NPY_DOUBLE, NPY_CORDER);
+	PyObject *nd_dL_est = PyArray_EMPTY(1, Odims, NPY_DOUBLE, NPY_CORDER);
 	double *mu_hat = (double *)PyArray_DATA(nd_mu_hat);
+	double *dL_est = (double *)PyArray_DATA(nd_dL_est);
 	
 	npy_intp ixs=0;
 	npy_intp ixs_next;
@@ -225,13 +227,21 @@ static PyObject *meth_fit_mu(PyObject *self, PyObject *args) {
 		dL_r = dlogL(mu_r, mu_b, ixs, ixs_next, ixb, ixb_next, f_is, g_is, f_ib, g_ib);
 		if ((dL_l <= 0.) && (dL_r < 0.)) {
 			mu_hat[i0] = 0.;
+			dL_est[i0] = dL_l;
 		}
 		else if ((dL_l > 0.) && (dL_r > 0.)) {
 			mu_hat[i0] = mu_r;
+			dL_est[i0] = dL_r;
 		}
 		else if ((dL_l < 0.) && (dL_r > 0.)) {
-			if (dL_l >= dL_r) { mu_hat[i0] = mu_l;}
-			else { mu_hat[i0] = mu_r;}
+			if (dL_l >= dL_r) {
+				mu_hat[i0] = mu_l;
+				dL_est[i0] = dL_l;
+			}
+			else {
+				mu_hat[i0] = mu_r;
+				dL_est[i0] = dL_r;
+			}
 		}
 		else {
 			mu_hat_est = 0.5 * (mu_l + mu_r);
@@ -250,6 +260,7 @@ static PyObject *meth_fit_mu(PyObject *self, PyObject *args) {
 				num_iter++;
 			}
 			mu_hat[i0] = mu_hat_est;
+			dL_est[i0] = dlogL(mu_hat_est,mu_b,ixs,ixs_next,ixb,ixb_next,f_is,g_is,f_ib,g_ib);
 		}
 		ixs = ixs_next;
 		ixb = ixb_next;
@@ -261,7 +272,13 @@ static PyObject *meth_fit_mu(PyObject *self, PyObject *args) {
 	Py_DECREF(nd_g_is);
 	Py_DECREF(nd_f_ib);
 	Py_DECREF(nd_g_ib);
-	return nd_mu_hat;
+	
+	// Create output tuple and fill with appropriate arrays
+	PyObject *out_tuple = PyTuple_New(2);
+	PyTuple_SetItem(out_tuple, 0, nd_mu_hat); // estimate of mu-hat
+	PyTuple_SetItem(out_tuple, 1, nd_dL_est); // derivative of log-likelihood at mu-hat estimate
+	//return nd_mu_hat;
+	return out_tuple;
 }
 
 static PyObject *meth_log_L(PyObject *self, PyObject *args) {
@@ -426,7 +443,13 @@ PyDoc_STRVAR(
 	"    signal and background x-values, respectively.\n"
 	"len(f_is) and len(g_is) should be equal to Ns.sum(),\n"
 	"len(f_ib) and len(g_ib) should be equal to Nb.sum().\n"
-	"mu_b is a scalar double: the true background expectation value.");
+	"mu_b is a scalar double: the true background expectation value.\n"
+	"Returns:\n"
+	"    mu-hat: array with mu-hat values\n"
+	"      dLog: array of values of the log-likelihood derivative at mu-hat. This\n"
+	"            will be close to zero (condition of extrema), except when the\n"
+	"            preferred mu-hat is negative.  In this case, mu-hat=0 and the\n"
+	"            derivative will *not* necessarily be zero.");
 PyDoc_STRVAR(
 	log_L__doc__,
 	"log_L(mu_s, mu_b, Ns, Nb, f_is, f_ib, g_is, g_ib)\n--\n\n"

@@ -12,13 +12,21 @@ s_true_i_dflt.sort()
 _f_sig_default = st.norm(loc=0., scale=1.)
 _g_bg_default = st.norm(loc=3., scale=1.)
 
+_b_true_default = 12.
+
 def gen_toys_and_fit(
-    b_true=12., 
+    b_true='default', 
     s_true_i='default', 
     f_sig_dist='default',
     g_bg_dist='default',
     nsim=int(1e4)):
     
+    if isinstance(b_true,str) and (b_true.lower()=='default'):
+        b_true = _b_true_default
+    if isinstance(b_true, int):
+        b_true = float(b_true)
+    if not isinstance(b_true,float):
+        raise TypeError("b_true must be a float")
     if isinstance(s_true_i,str) and (s_true_i == 'default'):
         s_true_i = s_true_i_dflt
     if not isinstance(s_true_i, np.ndarray):
@@ -53,6 +61,8 @@ def gen_toys_and_fit(
     mu_hat1_i = np.empty((len(s_true_i), nsim), dtype=float)
     mu_hat1_0_i = np.empty((len(s_true_i), nsim), dtype=float)
     
+    dLL_i = np.empty((len(s_true_i), nsim), dtype=float) # (d/d mu) logL at mu=mu_hat
+    
     for kpoi, s_true in enumerate(s_true_i):
         Nb[kpoi,:] = st.poisson.rvs(b_true, size=nsim)
         Ns[kpoi,:] = st.poisson.rvs(s_true, size=nsim)
@@ -62,7 +72,7 @@ def gen_toys_and_fit(
         f_is = f_sig.pdf(xsD[f'xs_{kpoi}'])
         g_ib = g_bg.pdf(xbD[f'xb_{kpoi}'])
         g_is = g_bg.pdf(xsD[f'xs_{kpoi}'])
-        mu_hat_i[kpoi,:] = plr.fit_mu(Nb[kpoi,:],Ns[kpoi,:],f_is,f_ib,g_is,g_ib,b_true)
+        mu_hat_i[kpoi,:], dLL_i[kpoi,:] = plr.fit_mu(Nb[kpoi,:],Ns[kpoi,:],f_is,f_ib,g_is,g_ib,b_true)
         mu_hat1_i[kpoi,:] = np.vstack([mu_hat_i[kpoi,:],np.full(nsim,s_true)]).min(0)
         mu_hat1_0_i[kpoi,:] = np.vstack([mu_hat_i[0,:],np.full(nsim,s_true)]).min(0)
     
@@ -75,8 +85,16 @@ def gen_toys_and_fit(
     outD['mu_hat1'] = mu_hat1_i    # best fit signal expectation values when nu-test and nu-true are same
     #                                1-sided, i.e. mu_hat1 = min(mu_hat, mu)
     outD['mu_hat1_0'] = mu_hat1_0_i
+    outD['dLL'] = dLL_i            # Derivative of log-like. func. eval'd at mu=mu_hat
     outD.update(xbD)               # bg data along observable x, corresponding to each Nb_o
     outD.update(xsD)               # signal data along observable x, corresponding to each Ns_o
+    
+    #if hasattr(f_sig,'dist') and isinstance(f_sig.dist, st._continuous_distns.norm_gen):
+    #    outD['f_sig_gauss_mu_sig'] = np.r_[f_sig.mean(), f_sig.std()]
+    #if hasattr(g_bg,'dist') and isinstance(g_bg.dist, st._continuous_distns.norm_gen):
+    #    outD['g_bg_gauss_mu_sig'] = np.r_[g_bg.mean(), g_bg.std()]
+    outD['f_sig'] = f_sig
+    outD['g_bg'] = g_bg
     return outD
 
 def sim_loglikes(d=None,save_data=True,**kwargs):
@@ -297,6 +315,74 @@ def get_UL_quantiles(d, key='pval0_t_tilde_mu', p0=0.1):
     ULs = np.r_[UL_n2sig, UL_n1sig, UL_median, UL_p1sig, UL_p2sig]
     return ULs
 
+def obs_stats(Nevts,x_obs,d=None, p0=0.1,**kwargs):
+    """
+    Calculate statistics of one or more observed experiments (without knowing the true
+    identity of the events, like in the toys).
+    Inputs:
+        Nevts: 1D Numpy array (NOT a scalar) of dtype int.  The length of this array is
+               the number of experiments which are being analyzed.  Each element of the
+               array tells how many events (in total) were observed for that experiment.
+        x_obs: A concatenated 1D numpy array of the observed x-values in the experiments.
+               The length of this array should be equal to the sum of Nevts.  The dtype
+               of x_obs must be float.
+            d: The dictionary containing the needed info of the toys, which have 
+               simulated BG and BG+Signal for a range of POI values.  If none is given,
+               then one will be generated.  Obviously, it will be faster to analyze 
+               repeated experiments if 'd' is given as a keyword argument.
+           p0: Scalar float, the threshold for the confidence interval (i.e. 1-CL).
+       kwargs: Additional keyword arguments that are necessary for generating the 
+               dictionary of toys (see 'gen_toys_and_fit').
+    Outputs:
+        d_obs: Dictionary containing statistical information for the given experiments:
+            Nevts:      Copy of the same input.
+            x_obs:      Copy of the same input.
+            p0:         Copy of the same input.
+            poi:        Array of test mu values in the toy dictionary.
+            mu_hat:     The MLE of the signal expectation value.
+            dLL:        The value of the log-likelihood function evaluated at the MLE.
+            L_muhat_d:  Log-likelihood value evaluated at mu_hat
+            L_mu_d:     Log-likelihood value evaluated at each POI value.
+            t_tilde_mu: Feldman-Cousins test statistic for each observed experiment.
+            p_vals:     Derived p-values for each experiment.
+            LL:         Lower limit on mu for each experiment.
+            UL:         Upper limit on mu for each experiment.
+            MP:         POI value that has the maximum p-value.
+        d_toys: Copy of the dictionary containing the toys information.
+    """
+    if d is None:
+        d = gen_toys_and_fit(**kwargs)
+        sim_loglikes(d=d, save_data=False)
+        sim_test_statistics(d=d)
+        p_values(d=d)
+        d['sense_quants'] = get_UL_quantiles(d,key='pval0_t_tilde_mu', p0=p0)
+        d['LLs'], d['ULs'], d['maxPois'] = plr.get_limits(d['poi'], d['pval0_t_tilde_mu'], p0=p0)
+    e_arr_dbl = np.array([], dtype=float)
+    xs = e_arr_dbl
+    fs_x = e_arr_dbl
+    gs_x = e_arr_dbl
+    fb_x = d['f_sig'].pdf(x_obs)
+    gb_x = d['g_bg'].pdf(x_obs)
+    Ns = np.zeros_like(Nevts)
+    mu_hat, dLL = plr.fit_mu(Nevts, Ns, fs_x, fb_x, gs_x, gb_x, d['b_true'])
+    L_muhat_d = plr.log_Lhat(mu_hat, d['b_true'], Ns, Nevts, fs_x, fb_x, gs_x, gb_x)
+    L_mu_d = np.empty((len(d['poi']),len(Nevts)))
+    t_tilde_mu = np.empty((len(d['poi']), len(Nevts)))
+    p_vals = np.empty((len(d['poi']),len(Nevts)))
+    
+    for kpoi, poi in enumerate(d['poi']):
+        L_mu_d[kpoi,:] = plr.log_L(poi, d['b_true'], Ns, Nevts, fs_x, fb_x, gs_x, gb_x)
+        t_tilde_mu[kpoi,:] = -2 * (L_mu_d[kpoi,:] - L_muhat_d)
+        p_vals[kpoi,:] = p_val_prep(d['t_tilde_mu'][kpoi,:], t_tilde_mu[kpoi,:])
+    LL, UL, MP = plr.get_limits(d['poi'],p_vals,p0=p0)
+    
+    outD_vars = ['Nevts','x_obs','p0','mu_hat','dLL','L_muhat_d',
+        'L_mu_d','t_tilde_mu','p_vals','LL','UL','MP']
+    outD = {}
+    for key in outD_vars:
+        outD[key] = locals()[key]
+    outD['poi'] = d['poi']
+    return outD, d
 
 
 
